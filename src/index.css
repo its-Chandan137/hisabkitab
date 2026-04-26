@@ -91,3 +91,9 @@
     @apply text-sm font-semibold uppercase tracking-[0.2em] text-electric-300/90;
   }
 }
+
+/* Additional CSS */
+
+.aside-section {
+  margin-top: 0 !important;
+}
