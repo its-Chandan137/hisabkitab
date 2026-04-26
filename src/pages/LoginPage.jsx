@@ -47,12 +47,12 @@ export default function LoginPage() {
           transition={{ duration: 0.35 }}
           className="glass-card p-6 sm:p-8"
         >
-          <div className="nav-pill w-fit">Encrypted on-device ledger</div>
+          <div className="nav-pill w-fit">Encrypted device ledger</div>
           <h1 className="mt-5 text-3xl font-extrabold tracking-tight text-white">
             {APP_NAME}
           </h1>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            Sign in with your `.env` credentials to open your personal udhar
+            Sign in with your credentials to open your personal udhar
             dashboard.
           </p>
 
