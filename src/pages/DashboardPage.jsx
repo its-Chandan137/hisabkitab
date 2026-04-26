@@ -48,7 +48,7 @@ function FriendCard({ friend, balance, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="glass-card min-w-[17rem] flex-1 p-5 text-left transition hover:-translate-y-1 hover:border-electric-500/[0.45]"
+      className="glass-card min-w-[17rem] w-[100%] flex-1 p-5 text-left transition hover:-translate-y-1 hover:border-electric-500/[0.45]"
     >
       <div className="flex items-center justify-between gap-3">
         <div>
@@ -436,9 +436,9 @@ export default function DashboardPage() {
   };
 
   return (
-    <PageShell className="max-w-7xl xl:pr-[23rem]">
-      <div className="space-y-6">
-        <section className="glass-card overflow-hidden p-5 sm:p-6">
+    <PageShell className="max-w-7xl">
+      <div className="space-y-6 flex gap-4">
+        <section className="glass-card overflow-hidden p-5 w-auto flex-1">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <div className="nav-pill w-fit">Daily money tracker</div>
@@ -466,7 +466,7 @@ export default function DashboardPage() {
 
               <SyncStatusButton status={syncStatus} onRetry={retrySync} />
 
-              <button
+              {/* <button
                 type="button"
                 onClick={() => {
                   logout();
@@ -475,7 +475,7 @@ export default function DashboardPage() {
                 className="btn-ghost hidden sm:inline-flex"
               >
                 Logout
-              </button>
+              </button> */}
             </div>
           </div>
 
@@ -493,8 +493,51 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <section id="friends-section" className="space-y-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <aside className="hidden xl:block aside-section">
+          <div className="w-[21rem]">
+            <div className="glass-card p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="panel-title">Groups</p>
+                  <h2 className="mt-2 text-2xl font-bold text-slate-100">
+                    Shared spends
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsGroupModalOpen(true)}
+                  className="btn-primary px-3 py-2 text-xs"
+                >
+                  + New Group
+                </button>
+              </div>
+
+              <div className="mt-5 space-y-3">
+                {groups.length ? (
+                  groups.map((group) => (
+                    <GroupPreviewCard
+                      key={group.id}
+                      group={group}
+                      groupBalance={calculateGroupBalance(groupExpenses, group)}
+                      onClick={() => navigate(`/groups?groupId=${group.id}`)}
+                    />
+                  ))
+                ) : (
+                  <EmptyState
+                    className="px-4 py-8"
+                    title="No groups yet"
+                    description="Create a group to track shared expenses separately."
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <div className="space-y-6">
+        <section id="friends-section" className="space-y-4 mt-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between  md:justify-between">
             <div>
               <p className="panel-title">Friends</p>
               <h2 className="mt-2 text-2xl font-bold text-slate-100">
@@ -714,46 +757,7 @@ export default function DashboardPage() {
         </section>
       </div>
 
-      <aside className="hidden xl:block">
-        <div className="fixed right-8 top-8 w-[21rem]">
-          <div className="glass-card p-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="panel-title">Groups</p>
-                <h2 className="mt-2 text-2xl font-bold text-slate-100">
-                  Shared spends
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsGroupModalOpen(true)}
-                className="btn-primary px-3 py-2 text-xs"
-              >
-                + New Group
-              </button>
-            </div>
 
-            <div className="mt-5 space-y-3">
-              {groups.length ? (
-                groups.map((group) => (
-                  <GroupPreviewCard
-                    key={group.id}
-                    group={group}
-                    groupBalance={calculateGroupBalance(groupExpenses, group)}
-                    onClick={() => navigate(`/groups?groupId=${group.id}`)}
-                  />
-                ))
-              ) : (
-                <EmptyState
-                  className="px-4 py-8"
-                  title="No groups yet"
-                  description="Create a group to track shared expenses separately."
-                />
-              )}
-            </div>
-          </div>
-        </div>
-      </aside>
 
       <GroupModal
         open={isGroupModalOpen}
