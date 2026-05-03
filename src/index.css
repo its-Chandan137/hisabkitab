@@ -97,3 +97,21 @@
 .aside-section {
   margin-top: 0 !important;
 }
+
+.groups-snap-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 189, 248, 0.7) rgba(10, 10, 15, 0.72);
+}
+
+.groups-snap-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.groups-snap-list::-webkit-scrollbar-track {
+  background: rgba(10, 10, 15, 0.72);
+}
+
+.groups-snap-list::-webkit-scrollbar-thumb {
+  background: rgba(56, 189, 248, 0.7);
+  border-radius: 999px;
+}

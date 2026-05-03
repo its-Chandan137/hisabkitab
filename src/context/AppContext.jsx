@@ -601,6 +601,34 @@ export function AppProvider({ children }) {
     return { success: true, group: savedGroup };
   };
 
+  const deleteGroup = (groupId) => {
+    const group = dataRef.current.groups.find((entry) => entry.id === groupId);
+
+    if (!group) {
+      return { success: false, message: 'Group not found.' };
+    }
+
+    commit(
+      (currentData) => ({
+        ...currentData,
+        groups: currentData.groups.filter((entry) => entry.id !== groupId),
+        groupExpenses: currentData.groupExpenses.filter(
+          (expense) => expense.groupId !== groupId,
+        ),
+        groupPayments: currentData.groupPayments.filter(
+          (payment) => payment.groupId !== groupId,
+        ),
+      }),
+      {
+        title: 'Group deleted',
+        message: `${group.name} and its records were removed.`,
+        tone: 'danger',
+      },
+    );
+
+    return { success: true };
+  };
+
   const addGroupExpense = ({ groupId, item, totalAmount, paidBy, date }) => {
     const group = dataRef.current.groups.find((entry) => entry.id === groupId);
     const cleanedItem = normalizeName(item);
@@ -641,6 +669,53 @@ export function AppProvider({ children }) {
     return { success: true, expense };
   };
 
+  const addGroupPayment = ({ groupId, friendId, amount, date, balanceBefore }) => {
+    const group = dataRef.current.groups.find((entry) => entry.id === groupId);
+    const numericAmount = roundCurrency(amount);
+    const numericBalanceBefore = roundCurrency(balanceBefore);
+
+    if (
+      !group ||
+      !friendId ||
+      !Number.isFinite(numericAmount) ||
+      !Number.isFinite(numericBalanceBefore) ||
+      numericAmount <= 0 ||
+      numericBalanceBefore <= 0
+    ) {
+      return {
+        success: false,
+        message: 'Member, amount, and group are required.',
+      };
+    }
+
+    const payment = {
+      id: createId('payment'),
+      groupId,
+      friendId,
+      amount: Math.min(numericAmount, numericBalanceBefore),
+      balanceBefore: numericBalanceBefore,
+      balanceRemaining: roundCurrency(
+        Math.max(numericBalanceBefore - numericAmount, 0),
+      ),
+      date: toIsoDate(date),
+      createdAt: new Date().toISOString(),
+    };
+
+    commit(
+      (currentData) => ({
+        ...currentData,
+        groupPayments: [payment, ...currentData.groupPayments],
+      }),
+      {
+        title: 'Payment recorded',
+        message: `${group.name} balance was updated.`,
+        tone: 'success',
+      },
+    );
+
+    return { success: true, payment };
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -658,7 +733,9 @@ export function AppProvider({ children }) {
         updateFriend,
         deleteFriend,
         saveGroup,
+        deleteGroup,
         addGroupExpense,
+        addGroupPayment,
       }}
     >
       {children}
