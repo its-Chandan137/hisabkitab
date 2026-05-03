@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Plus, Trash2, X } from 'lucide-react';
 import ModalShell from '../shared/ModalShell';
-import { normalizeName } from '../../lib/utils';
+import { formatDisplayDate, normalizeName } from '../../lib/utils';
 
 function buildInitialMembers(group, friends) {
   if (!group) {
@@ -30,11 +30,13 @@ export default function GroupModal({
   group,
   friends,
   onSave,
+  onDelete,
 }) {
   const [name, setName] = useState('');
   const [memberPicker, setMemberPicker] = useState('');
   const [customMemberName, setCustomMemberName] = useState('');
   const [members, setMembers] = useState([]);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -45,6 +47,7 @@ export default function GroupModal({
     setMemberPicker('');
     setCustomMemberName('');
     setMembers(buildInitialMembers(group, friends));
+    setIsDeleteConfirmOpen(false);
   }, [open, group, friends]);
 
   const availableFriends = friends.filter(
@@ -103,14 +106,40 @@ export default function GroupModal({
     }
   };
 
+  const handleDelete = () => {
+    if (!group || !onDelete) {
+      return;
+    }
+
+    const result = onDelete(group.id);
+
+    if (result.success) {
+      setIsDeleteConfirmOpen(false);
+      onClose();
+    }
+  };
+
+  const confirmMembers = group
+    ? [
+        { label: 'You', key: 'me' },
+        ...group.members.map((member) => ({
+          label:
+            friends.find((friend) => friend.id === member.friendId)?.name ||
+            'Unknown',
+          key: member.friendId,
+        })),
+      ]
+    : [];
+
   return (
-    <ModalShell
-      open={open}
-      onClose={onClose}
-      title={group ? 'Edit group' : 'New group'}
-      description="Choose friends or add a new name. New names are also saved to your friends list."
-    >
-      <form className="space-y-5" onSubmit={handleSubmit}>
+    <>
+      <ModalShell
+        open={open}
+        onClose={onClose}
+        title={group ? 'Edit group' : 'New group'}
+        description="Choose friends or add a new name. New names are also saved to your friends list."
+      >
+        <form className="space-y-5" onSubmit={handleSubmit}>
         <label className="block">
           <span className="mb-2 block text-sm font-medium text-slate-300">
             Group name
@@ -204,15 +233,83 @@ export default function GroupModal({
           </div>
         </div>
 
-        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-          <button type="button" onClick={onClose} className="btn-ghost">
-            Cancel
-          </button>
-          <button type="submit" className="btn-primary">
-            {group ? 'Save changes' : 'Create group'}
-          </button>
-        </div>
-      </form>
-    </ModalShell>
+          {group && onDelete ? (
+            <div className="flex justify-start">
+              <button
+                type="button"
+                onClick={() => setIsDeleteConfirmOpen(true)}
+                className="btn-danger"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete Group
+              </button>
+            </div>
+          ) : null}
+
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <button type="button" onClick={onClose} className="btn-ghost">
+              Cancel
+            </button>
+            <button type="submit" className="btn-primary">
+              {group ? 'Save changes' : 'Create group'}
+            </button>
+          </div>
+        </form>
+      </ModalShell>
+
+      <ModalShell
+        open={isDeleteConfirmOpen}
+        onClose={() => setIsDeleteConfirmOpen(false)}
+        title="Delete group"
+        description="All data from this group will be permanently lost. This cannot be undone."
+        className="max-w-lg"
+      >
+        {group ? (
+          <div className="space-y-5">
+            <div className="surface-panel space-y-4 p-4">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-slate-400">Group name</span>
+                <span className="text-right text-slate-100">{group.name}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-slate-400">Created date</span>
+                <span className="text-slate-100">
+                  {formatDisplayDate(group.createdAt)}
+                </span>
+              </div>
+              <div>
+                <span className="mb-3 block text-sm text-slate-400">
+                  Members
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {confirmMembers.map((member) => (
+                    <span
+                      key={member.key}
+                      className="inline-flex items-center rounded-full border border-electric-500/25 bg-electric-500/10 px-3 py-2 text-sm text-electric-200"
+                    >
+                      {member.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setIsDeleteConfirmOpen(false)}
+                className="btn-ghost"
+              >
+                Cancel
+              </button>
+              <button type="button" onClick={handleDelete} className="btn-danger">
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </ModalShell>
+    </>
   );
 }

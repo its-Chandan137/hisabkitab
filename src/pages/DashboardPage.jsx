@@ -72,7 +72,7 @@ function GroupPreviewCard({ group, groupBalance, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="surface-panel w-full border border-electric-500/[0.12] p-4 text-left transition hover:border-electric-500/30 hover:bg-electric-500/5"
+      className="surface-panel w-full snap-start border border-electric-500/[0.12] p-4 text-left transition hover:border-electric-500/30 hover:bg-electric-500/5"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -346,6 +346,7 @@ export default function DashboardPage() {
     transactions,
     groups,
     groupExpenses,
+    groupPayments,
     saveGroup,
     logout,
     retrySync,
@@ -437,7 +438,7 @@ export default function DashboardPage() {
 
   return (
     <PageShell className="max-w-7xl">
-      <div className="space-y-6 flex gap-4">
+      <div className="flex flex-col gap-4 xl:flex-row">
         <section className="glass-card overflow-hidden p-5 w-auto flex-1">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -493,10 +494,10 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <aside className="hidden xl:block aside-section">
-          <div className="w-[21rem]">
+        <aside className="aside-section w-full xl:w-auto">
+          <div className="w-full xl:w-[21rem]">
             <div className="glass-card p-5">
-              <div className="flex items-center justify-between gap-3">
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-3">
                 <div>
                   <p className="panel-title">Groups</p>
                   <h2 className="mt-2 text-2xl font-bold text-slate-100">
@@ -512,13 +513,17 @@ export default function DashboardPage() {
                 </button>
               </div>
 
-              <div className="mt-5 space-y-3">
+              <div className="groups-snap-list mt-5 h-[9rem] space-y-3 overflow-y-auto pr-1 snap-y snap-mandatory">
                 {groups.length ? (
                   groups.map((group) => (
                     <GroupPreviewCard
                       key={group.id}
                       group={group}
-                      groupBalance={calculateGroupBalance(groupExpenses, group)}
+                      groupBalance={calculateGroupBalance(
+                        groupExpenses,
+                        group,
+                        groupPayments,
+                      )}
                       onClick={() => navigate(`/groups?groupId=${group.id}`)}
                     />
                   ))

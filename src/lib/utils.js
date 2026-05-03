@@ -220,31 +220,43 @@ export function hasActiveFilters(filters, ignoredKeys = []) {
   });
 }
 
-export function calculateGroupMemberBalance(groupExpenses, group, friendId) {
+export function calculateGroupMemberBalance(
+  groupExpenses,
+  group,
+  friendId,
+  groupPayments = [],
+) {
   if (!group) {
     return 0;
   }
 
-  return roundCurrency(
-    groupExpenses
-      .filter((expense) => expense.groupId === group.id)
-      .reduce((total, expense) => {
-        const splitAmount = Number(expense.splitAmount) || 0;
+  const expenseBalance = groupExpenses
+    .filter((expense) => expense.groupId === group.id)
+    .reduce((total, expense) => {
+      const splitAmount = Number(expense.splitAmount) || 0;
 
-        if (expense.paidBy === 'me') {
-          return total + splitAmount;
-        }
+      if (expense.paidBy === 'me') {
+        return total + splitAmount;
+      }
 
-        if (expense.paidBy === friendId) {
-          return total - splitAmount;
-        }
+      if (expense.paidBy === friendId) {
+        return total - splitAmount;
+      }
 
-        return total;
-      }, 0),
-  );
+      return total;
+    }, 0);
+
+  const paidBalance = groupPayments
+    .filter(
+      (payment) =>
+        payment.groupId === group.id && payment.friendId === friendId,
+    )
+    .reduce((total, payment) => total + (Number(payment.amount) || 0), 0);
+
+  return roundCurrency(expenseBalance - paidBalance);
 }
 
-export function calculateGroupBalance(groupExpenses, group) {
+export function calculateGroupBalance(groupExpenses, group, groupPayments = []) {
   if (!group) {
     return 0;
   }
@@ -252,7 +264,13 @@ export function calculateGroupBalance(groupExpenses, group) {
   return roundCurrency(
     group.members.reduce(
       (total, member) =>
-        total + calculateGroupMemberBalance(groupExpenses, group, member.friendId),
+        total +
+        calculateGroupMemberBalance(
+          groupExpenses,
+          group,
+          member.friendId,
+          groupPayments,
+        ),
       0,
     ),
   );

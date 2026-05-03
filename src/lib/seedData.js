@@ -132,5 +132,6 @@ export function createSeedData() {
     transactions,
     groups,
     groupExpenses,
+    groupPayments: [],
   };
 }

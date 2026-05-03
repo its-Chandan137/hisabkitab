@@ -26,6 +26,11 @@ function deriveUpdatedAt(data) {
           (expense) => expense.createdAt || expense.date,
         )
       : []),
+    ...(Array.isArray(data?.groupPayments)
+      ? data.groupPayments.map(
+          (payment) => payment.createdAt || payment.date,
+        )
+      : []),
   ]
     .map((value) => new Date(value).getTime())
     .filter(Number.isFinite);
@@ -46,6 +51,7 @@ export function normalizeAppData(data, fallbackUpdatedAt) {
     transactions: Array.isArray(data?.transactions) ? data.transactions : [],
     groups: Array.isArray(data?.groups) ? data.groups : [],
     groupExpenses: Array.isArray(data?.groupExpenses) ? data.groupExpenses : [],
+    groupPayments: Array.isArray(data?.groupPayments) ? data.groupPayments : [],
   };
 
   return normalizedData;

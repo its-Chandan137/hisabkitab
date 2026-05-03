@@ -5,6 +5,7 @@ import ExpenseModal from '../components/modals/ExpenseModal';
 import GroupModal from '../components/modals/GroupModal';
 import BalanceText from '../components/shared/BalanceText';
 import EmptyState from '../components/shared/EmptyState';
+import ModalShell from '../components/shared/ModalShell';
 import PageBreadcrumbs from '../components/shared/PageBreadcrumbs';
 import PageShell from '../components/shared/PageShell';
 import SyncStatusButton from '../components/shared/SyncStatusButton';
@@ -14,6 +15,7 @@ import {
   calculateGroupMemberBalance,
   formatCurrency,
   formatDisplayDate,
+  getTodayInputValue,
   resolveMemberName,
 } from '../lib/utils';
 
@@ -50,13 +52,135 @@ function GroupCard({ group, active, summary, onClick }) {
   );
 }
 
+function MemberPaymentModal({
+  open,
+  onClose,
+  memberName,
+  balance,
+  onSubmit,
+}) {
+  const [date, setDate] = useState(getTodayInputValue());
+  const [amountMode, setAmountMode] = useState('full');
+  const [customAmount, setCustomAmount] = useState('');
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    setDate(getTodayInputValue());
+    setAmountMode('full');
+    setCustomAmount('');
+  }, [open]);
+
+  const amount = amountMode === 'full' ? balance : Number(customAmount);
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+
+    if (!amount || amount <= 0) {
+      return;
+    }
+
+    onSubmit({
+      date,
+      amount,
+    });
+  };
+
+  return (
+    <ModalShell
+      open={open}
+      onClose={onClose}
+      title="Record payment"
+      className="max-w-lg"
+    >
+      <form className="space-y-5" onSubmit={handleSubmit}>
+        <div className="surface-panel space-y-3 p-4">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-slate-400">Member</span>
+            <span className="text-right text-slate-100">{memberName}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-slate-400">Outstanding</span>
+            <span className="text-slate-100">{formatCurrency(balance)}</span>
+          </div>
+        </div>
+
+        <label className="block">
+          <span className="mb-2 block text-sm font-medium text-slate-300">
+            Date
+          </span>
+          <input
+            type="date"
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
+            className="input-field"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-2 block text-sm font-medium text-slate-300">
+            Amount
+          </span>
+          <select
+            value={amountMode}
+            onChange={(event) => setAmountMode(event.target.value)}
+            className="input-field"
+          >
+            <option value="full">Full Amount</option>
+            <option value="custom">Custom Amount</option>
+          </select>
+        </label>
+
+        {amountMode === 'full' ? (
+          <div className="surface-panel p-4">
+            <p className="text-sm text-slate-400">Full Amount</p>
+            <p className="mt-2 text-sm font-semibold text-slate-100">
+              {formatCurrency(balance)}
+            </p>
+          </div>
+        ) : (
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-300">
+              Custom Amount
+            </span>
+            <input
+              type="number"
+              min="0"
+              max={balance}
+              step="0.01"
+              value={customAmount}
+              onChange={(event) => setCustomAmount(event.target.value)}
+              className="input-field"
+              placeholder="0"
+            />
+          </label>
+        )}
+
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} className="btn-ghost">
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary">
+            Submit
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
 export default function GroupsPage() {
   const {
     friends,
     groups,
     groupExpenses,
+    groupPayments,
     saveGroup,
+    deleteGroup,
     addGroupExpense,
+    addGroupPayment,
     retrySync,
     syncStatus,
   } = useAppContext();
@@ -64,6 +188,7 @@ export default function GroupsPage() {
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState(null);
+  const [payingMember, setPayingMember] = useState(null);
 
   const selectedGroupId = searchParams.get('groupId');
   const selectedGroup =
@@ -80,10 +205,37 @@ export default function GroupsPage() {
         .filter((expense) => expense.groupId === selectedGroup.id)
         .sort((left, right) => new Date(right.date) - new Date(left.date))
     : [];
+  const selectedPayments = selectedGroup
+    ? groupPayments
+        .filter((payment) => payment.groupId === selectedGroup.id)
+        .sort(
+          (left, right) =>
+            new Date(right.createdAt || right.date) -
+            new Date(left.createdAt || left.date),
+        )
+    : [];
   const totalSpent = selectedExpenses.reduce(
     (total, expense) => total + Number(expense.totalAmount || 0),
     0,
   );
+
+  const handlePaymentSubmit = ({ amount, date }) => {
+    if (!selectedGroup || !payingMember) {
+      return;
+    }
+
+    const result = addGroupPayment({
+      groupId: selectedGroup.id,
+      friendId: payingMember.friendId,
+      amount,
+      date,
+      balanceBefore: payingMember.balance,
+    });
+
+    if (result.success) {
+      setPayingMember(null);
+    }
+  };
 
   return (
     <PageShell className="max-w-7xl">
@@ -140,7 +292,9 @@ export default function GroupsPage() {
                   group={group}
                   active={selectedGroup?.id === group.id}
                   summary={formatCurrency(
-                    Math.abs(calculateGroupBalance(groupExpenses, group)),
+                    Math.abs(
+                      calculateGroupBalance(groupExpenses, group, groupPayments),
+                    ),
                   )}
                   onClick={() => setSearchParams({ groupId: group.id })}
                 />
@@ -196,7 +350,13 @@ export default function GroupsPage() {
                       <p className="text-sm text-slate-400">Outstanding</p>
                       <p className="mt-3 text-2xl font-semibold text-electric-200">
                         {formatCurrency(
-                          Math.abs(calculateGroupBalance(groupExpenses, selectedGroup)),
+                          Math.abs(
+                            calculateGroupBalance(
+                              groupExpenses,
+                              selectedGroup,
+                              groupPayments,
+                            ),
+                          ),
                         )}
                       </p>
                     </div>
@@ -207,11 +367,29 @@ export default function GroupsPage() {
                         groupExpenses,
                         selectedGroup,
                         member.friendId,
+                        groupPayments,
                       );
 
                       return (
                         <div key={member.friendId} className="surface-panel p-4">
-                          <p className="text-sm text-slate-400">{memberName}</p>
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm text-slate-400">{memberName}</p>
+                            {balance > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setPayingMember({
+                                    friendId: member.friendId,
+                                    name: memberName,
+                                    balance,
+                                  })
+                                }
+                                className="btn-ghost px-3 py-2 text-xs"
+                              >
+                                Paid
+                              </button>
+                            ) : null}
+                          </div>
                           <div className="mt-3">
                             <BalanceText balance={balance} zeroLabel="Settled" />
                           </div>
@@ -232,7 +410,13 @@ export default function GroupsPage() {
                     <div className="hidden rounded-full border border-electric-500/20 bg-electric-500/10 px-3 py-2 text-sm text-electric-200 sm:block">
                       Total outstanding{' '}
                       {formatCurrency(
-                        Math.abs(calculateGroupBalance(groupExpenses, selectedGroup)),
+                        Math.abs(
+                          calculateGroupBalance(
+                            groupExpenses,
+                            selectedGroup,
+                            groupPayments,
+                          ),
+                        ),
                       )}
                     </div>
                   </div>
@@ -313,6 +497,120 @@ export default function GroupsPage() {
                     />
                   )}
                 </section>
+
+                <section className="space-y-4">
+                  <div>
+                    <p className="panel-title">Payments</p>
+                    <h3 className="mt-2 text-2xl font-bold text-slate-100">
+                      {selectedGroup.name} Track Record
+                    </h3>
+                  </div>
+
+                  {selectedPayments.length ? (
+                    <>
+                      <div className="hidden overflow-hidden rounded-3xl border border-electric-500/[0.15] bg-slate-950/[0.55] shadow-soft backdrop-blur-xl md:block">
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-white/5 text-left">
+                            <thead className="bg-white/[0.03]">
+                              <tr className="text-sm uppercase tracking-[0.18em] text-slate-400">
+                                <th className="px-6 py-4 font-medium">Name</th>
+                                <th className="px-6 py-4 font-medium">Amount Paid</th>
+                                <th className="px-6 py-4 font-medium">
+                                  Balance Remaining
+                                </th>
+                                <th className="px-6 py-4 font-medium">Date</th>
+                                <th className="px-6 py-4 font-medium">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                              {selectedPayments.map((payment) => {
+                                const memberName =
+                                  friends.find(
+                                    (friend) => friend.id === payment.friendId,
+                                  )?.name || 'Unknown';
+                                const remaining =
+                                  Number(payment.balanceRemaining) || 0;
+
+                                return (
+                                  <tr
+                                    key={payment.id}
+                                    className="text-sm text-slate-300"
+                                  >
+                                    <td className="px-6 py-4">{memberName}</td>
+                                    <td className="px-6 py-4">
+                                      {formatCurrency(payment.amount)}
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      {formatCurrency(remaining)}
+                                    </td>
+                                    <td className="px-6 py-4 text-slate-400">
+                                      {formatDisplayDate(payment.date)}
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      {remaining <= 0 ? 'Full' : 'Partial'}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3 md:hidden">
+                        {selectedPayments.map((payment) => {
+                          const memberName =
+                            friends.find(
+                              (friend) => friend.id === payment.friendId,
+                            )?.name || 'Unknown';
+                          const remaining = Number(payment.balanceRemaining) || 0;
+
+                          return (
+                            <div
+                              key={payment.id}
+                              className="surface-panel border border-white/5 p-4"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-100">
+                                    {memberName}
+                                  </p>
+                                  <p className="mt-1 text-sm text-slate-500">
+                                    {formatDisplayDate(payment.date)}
+                                  </p>
+                                </div>
+                                <span className="text-sm text-slate-300">
+                                  {remaining <= 0 ? 'Full' : 'Partial'}
+                                </span>
+                              </div>
+                              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                                <div className="rounded-2xl bg-white/5 p-3">
+                                  <p className="text-slate-400">Amount Paid</p>
+                                  <p className="mt-1 font-semibold text-slate-100">
+                                    {formatCurrency(payment.amount)}
+                                  </p>
+                                </div>
+                                <div className="rounded-2xl bg-white/5 p-3">
+                                  <p className="text-slate-400">
+                                    Balance Remaining
+                                  </p>
+                                  <p className="mt-1 font-semibold text-slate-100">
+                                    {formatCurrency(remaining)}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <EmptyState
+                      title="No payments recorded yet."
+                      description="Use Paid on an outstanding member to add a track record entry."
+                    />
+                  )}
+                </section>
               </div>
             ) : null}
           </div>
@@ -343,6 +641,7 @@ export default function GroupsPage() {
         group={editingGroup}
         friends={friends}
         onSave={saveGroup}
+        onDelete={deleteGroup}
       />
 
       <ExpenseModal
@@ -351,6 +650,14 @@ export default function GroupsPage() {
         group={selectedGroup}
         friends={friends}
         onSave={addGroupExpense}
+      />
+
+      <MemberPaymentModal
+        open={Boolean(payingMember)}
+        onClose={() => setPayingMember(null)}
+        memberName={payingMember?.name || ''}
+        balance={payingMember?.balance || 0}
+        onSubmit={handlePaymentSubmit}
       />
     </PageShell>
   );
