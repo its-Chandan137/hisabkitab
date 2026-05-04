@@ -385,9 +385,22 @@ export default function DashboardPage() {
     globalFilters.sort,
   ]);
 
-  const filteredFriends = friends.filter((friend) =>
-    friend.name.toLowerCase().includes(searchQuery.trim().toLowerCase()),
-  );
+  const filteredFriends = friends
+    .filter((friend) => {
+      return friend.name
+        .toLowerCase()
+        .includes(searchQuery.trim().toLowerCase());
+    })
+    .sort((a, b) => {
+      const balanceA = calculateBalance(
+        transactions.filter((transaction) => transaction.friendId === a.id),
+      );
+      const balanceB = calculateBalance(
+        transactions.filter((transaction) => transaction.friendId === b.id),
+      );
+      return Math.abs(balanceB) - Math.abs(balanceA);
+    });
+
   const hasGlobalFilters = hasActiveFilters(globalFilters);
   const filteredTransactions = sortTransactionsByOption(
     filterTransactions(transactions, globalFilters),
