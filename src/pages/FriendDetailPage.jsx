@@ -337,7 +337,7 @@ export default function FriendDetailPage() {
   };
 
   return (
-    <PageShell className="max-w-5xl">
+    <PageShell>
       <PageBreadcrumbs
         mobileBackTo="/dashboard"
         items={[
