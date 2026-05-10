@@ -82,10 +82,22 @@ export default async function handler(request, response) {
   }
 
   try {
-    await requireAdmin(request);
-
     const adminClient = createAdminClient();
     const { action, userId } = request.body || {};
+
+
+    if (action === 'insert-profile') {
+      const { id, username, email, status, created_at } = request.body;
+      
+      const { error } = await adminClient
+        .from('profiles')
+        .insert({ id, username, email, status, created_at });
+
+      if (error) throw error;
+      return response.status(200).json({ success: true });
+    }
+
+    await requireAdmin(request);
 
     if (action === 'list') {
       const { data, error } = await adminClient

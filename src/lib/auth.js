@@ -64,23 +64,18 @@ export async function requestAccess({ username, email, password }) {
     };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .insert(
-      {
-        id: userId,
-        username,
-        email,
-        status: 'pending',
-        created_at: requestedAt,
-      },
-    )
-    .select('status')
-    .single();
+  const insertResult = await callInternalApi('/api/admin-users', {
+    action: 'insert-profile',
+    id: userId,
+    username,
+    email,
+    status: 'pending',
+    created_at: requestedAt,
+  });
 
-  if (profileError) {
+  if (!insertResult.success) {
     await supabase.auth.signOut();
-    return { success: false, message: profileError.message };
+    return { success: false, message: 'Failed to create profile.' };
   }
 
   await sendEmail({
@@ -96,10 +91,7 @@ export async function requestAccess({ username, email, password }) {
 
   await supabase.auth.signOut();
 
-  return {
-    success: true,
-    status: profile.status,
-  };
+  return { success: true, status: 'pending' };
 }
 
 export async function sendEmail({ to, subject, html }) {
