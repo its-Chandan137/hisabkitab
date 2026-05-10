@@ -2,7 +2,7 @@ export const APP_NAME = 'HisabKitab';
 export const STORAGE_KEY = 'hisabkitab_data';
 export const SESSION_KEY = 'hisabkitab_session';
 export const PENDING_SYNC_KEY = 'hisabkitab_pending_sync';
-export const DATA_VERSION = 3;
+export const DATA_VERSION = 4;
 
 export const AUTH_USERNAME = import.meta.env.VITE_APP_USERNAME || '';
 export const AUTH_PASSWORD = import.meta.env.VITE_APP_PASSWORD || '';

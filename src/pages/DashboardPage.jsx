@@ -9,9 +9,8 @@ import {
   UserRound,
   UsersRound,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
-import GroupModal from '../components/modals/GroupModal';
 import BalanceText from '../components/shared/BalanceText';
 import EmptyState from '../components/shared/EmptyState';
 import MobileSheet from '../components/shared/MobileSheet';
@@ -29,6 +28,8 @@ import {
   hasActiveFilters,
   sortTransactionsByOption,
 } from '../lib/utils';
+
+const GroupModal = lazy(() => import('../components/modals/GroupModal'));
 
 const DASHBOARD_FILTER_DEFAULTS = {
   friendId: '',
@@ -777,12 +778,16 @@ export default function DashboardPage() {
 
 
 
-      <GroupModal
-        open={isGroupModalOpen}
-        onClose={() => setIsGroupModalOpen(false)}
-        friends={friends}
-        onSave={saveGroup}
-      />
+      {isGroupModalOpen ? (
+        <Suspense fallback={null}>
+          <GroupModal
+            open={isGroupModalOpen}
+            onClose={() => setIsGroupModalOpen(false)}
+            friends={friends}
+            onSave={saveGroup}
+          />
+        </Suspense>
+      ) : null}
 
       <MobileSheet
         open={isMobileFiltersOpen}

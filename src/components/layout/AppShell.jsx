@@ -1,10 +1,11 @@
 import { Outlet } from 'react-router-dom';
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import DesktopSidebar from './DesktopSidebar';
 import MobileBottomNav from './MobileBottomNav';
 import ToastViewport from '../shared/ToastViewport';
-import AddFriendModal from '../modals/AddFriendModal';
 import { useAppContext } from '../../context/AppContext';
+
+const AddFriendModal = lazy(() => import('../modals/AddFriendModal'));
 
 export default function AppShell() {
   const [isAddFriendModalOpen, setIsAddFriendModalOpen] = useState(false);
@@ -20,11 +21,15 @@ export default function AppShell() {
 
       <MobileBottomNav />
       <ToastViewport />
-      <AddFriendModal
-        open={isAddFriendModalOpen}
-        onClose={() => setIsAddFriendModalOpen(false)}
-        onSave={addFriend}
-      />
+      {isAddFriendModalOpen ? (
+        <Suspense fallback={null}>
+          <AddFriendModal
+            open={isAddFriendModalOpen}
+            onClose={() => setIsAddFriendModalOpen(false)}
+            onSave={addFriend}
+          />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

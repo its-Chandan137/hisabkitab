@@ -13,7 +13,7 @@ import {
   restoreAppDataFromEncrypted,
   setPendingSyncFlag,
 } from '../lib/storage';
-import { loadFromCloud, saveToCloud } from '../lib/sync';
+import { createFriendFromName, syncGroupLedgers } from '../lib/groupLedgerSync';
 import {
   createId,
   normalizeName,
@@ -93,6 +93,8 @@ export function AppProvider({ children }) {
     setSyncStatus('syncing');
 
     try {
+      const { saveToCloud } = await import('../lib/sync');
+
       await saveToCloud(
         AUTH_USERNAME,
         snapshot.encryptedData,
@@ -154,6 +156,7 @@ export function AppProvider({ children }) {
     setSyncStatus('syncing');
 
     try {
+      const { loadFromCloud } = await import('../lib/sync');
       const cloudRow = await loadFromCloud(AUTH_USERNAME);
 
       if (!cloudRow?.data) {
@@ -224,7 +227,8 @@ export function AppProvider({ children }) {
     const baseData = dataRef.current;
     const nextData =
       typeof updater === 'function' ? updater(baseData) : updater;
-    const snapshot = persistAppData(nextData, {
+    const syncedData = syncGroupLedgers(nextData);
+    const snapshot = persistAppData(syncedData, {
       updatedAt: new Date().toISOString(),
     });
 
@@ -426,6 +430,17 @@ export function AppProvider({ children }) {
   };
 
   const deleteTransaction = (transactionId) => {
+    const transaction = dataRef.current.transactions.find(
+      (entry) => entry.id === transactionId,
+    );
+
+    if (transaction?.isGroupSynced) {
+      return {
+        success: false,
+        message: 'Group-linked entries can only be changed from the group.',
+      };
+    }
+
     commit(
       (currentData) => ({
         ...currentData,
@@ -439,6 +454,8 @@ export function AppProvider({ children }) {
         tone: 'danger',
       },
     );
+
+    return { success: true };
   };
 
   const updateFriend = (friendId, nextName) => {
@@ -518,10 +535,12 @@ export function AppProvider({ children }) {
     }
 
     let savedGroup = null;
+    let newlyAddedFriends = [];
 
     commit(
       (currentData) => {
         const nextFriends = [...currentData.friends];
+        const addedFriends = [];
         const resolvedMembers = [];
 
         members.forEach((member) => {
@@ -549,11 +568,13 @@ export function AppProvider({ children }) {
           const friendId = existingFriend?.id || createId('friend');
 
           if (!existingFriend) {
-            nextFriends.push({
+            const friend = {
+              ...createFriendFromName(customName),
               id: friendId,
-              name: customName,
-              createdAt: new Date().toISOString(),
-            });
+            };
+
+            nextFriends.push(friend);
+            addedFriends.push(friend);
           }
 
           if (
@@ -580,6 +601,7 @@ export function AppProvider({ children }) {
             };
 
         savedGroup = nextGroup;
+        newlyAddedFriends = addedFriends;
 
         return {
           ...currentData,
@@ -597,6 +619,14 @@ export function AppProvider({ children }) {
         tone: 'success',
       },
     );
+
+    newlyAddedFriends.forEach((friend) => {
+      addToast({
+        title: 'Friend added',
+        message: `${friend.name} was added to your friends list`,
+        tone: 'success',
+      });
+    });
 
     return { success: true, group: savedGroup };
   };
@@ -669,6 +699,86 @@ export function AppProvider({ children }) {
     return { success: true, expense };
   };
 
+  const updateGroupExpense = ({
+    expenseId,
+    item,
+    totalAmount,
+    paidBy,
+    date,
+  }) => {
+    const existingExpense = dataRef.current.groupExpenses.find(
+      (expense) => expense.id === expenseId,
+    );
+    const group = dataRef.current.groups.find(
+      (entry) => entry.id === existingExpense?.groupId,
+    );
+    const cleanedItem = normalizeName(item);
+    const numericTotal = roundCurrency(totalAmount);
+
+    if (!existingExpense || !group || !cleanedItem || !numericTotal || !paidBy) {
+      return {
+        success: false,
+        message: 'Item, total, payer, and group are required.',
+      };
+    }
+
+    const splitAmount = roundCurrency(numericTotal / (group.members.length + 1));
+    const updatedExpense = {
+      ...existingExpense,
+      item: cleanedItem,
+      totalAmount: numericTotal,
+      paidBy,
+      splitAmount,
+      date: toIsoDate(date),
+      updatedAt: new Date().toISOString(),
+    };
+
+    commit(
+      (currentData) => ({
+        ...currentData,
+        groupExpenses: currentData.groupExpenses.map((expense) =>
+          expense.id === expenseId ? updatedExpense : expense,
+        ),
+      }),
+      {
+        title: 'Expense updated',
+        message: `${group.name} group balances were updated.`,
+        tone: 'success',
+      },
+    );
+
+    return { success: true, expense: updatedExpense };
+  };
+
+  const deleteGroupExpense = (expenseId) => {
+    const existingExpense = dataRef.current.groupExpenses.find(
+      (expense) => expense.id === expenseId,
+    );
+    const group = dataRef.current.groups.find(
+      (entry) => entry.id === existingExpense?.groupId,
+    );
+
+    if (!existingExpense || !group) {
+      return { success: false, message: 'Expense not found.' };
+    }
+
+    commit(
+      (currentData) => ({
+        ...currentData,
+        groupExpenses: currentData.groupExpenses.filter(
+          (expense) => expense.id !== expenseId,
+        ),
+      }),
+      {
+        title: 'Expense deleted',
+        message: `${group.name} group balances were updated.`,
+        tone: 'danger',
+      },
+    );
+
+    return { success: true };
+  };
+
   const addGroupPayment = ({ groupId, friendId, amount, date, balanceBefore }) => {
     const group = dataRef.current.groups.find((entry) => entry.id === groupId);
     const numericAmount = roundCurrency(amount);
@@ -735,6 +845,8 @@ export function AppProvider({ children }) {
         saveGroup,
         deleteGroup,
         addGroupExpense,
+        updateGroupExpense,
+        deleteGroupExpense,
         addGroupPayment,
       }}
     >

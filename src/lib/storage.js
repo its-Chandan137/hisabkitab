@@ -5,6 +5,7 @@ import {
   PENDING_SYNC_KEY,
   STORAGE_KEY,
 } from './constants';
+import { syncGroupLedgers } from './groupLedgerSync';
 import { createSeedData } from './seedData';
 
 function deriveUpdatedAt(data) {
@@ -54,7 +55,7 @@ export function normalizeAppData(data, fallbackUpdatedAt) {
     groupPayments: Array.isArray(data?.groupPayments) ? data.groupPayments : [],
   };
 
-  return normalizedData;
+  return syncGroupLedgers(normalizedData);
 }
 
 export function encryptAppData(data, options = {}) {
@@ -129,8 +130,8 @@ export function loadAppData() {
 
   if (!savedPayload) {
     const seedData = createSeedData();
-    persistAppData(seedData, { updatedAt: seedData.updatedAt });
-    return seedData;
+    const seedPayload = persistAppData(seedData, { updatedAt: seedData.updatedAt });
+    return seedPayload.data;
   }
 
   try {
@@ -147,7 +148,7 @@ export function loadAppData() {
   } catch (error) {
     console.warn('Resetting app data because decryption failed.', error);
     const seedData = createSeedData();
-    persistAppData(seedData, { updatedAt: seedData.updatedAt });
-    return seedData;
+    const seedPayload = persistAppData(seedData, { updatedAt: seedData.updatedAt });
+    return seedPayload.data;
   }
 }
