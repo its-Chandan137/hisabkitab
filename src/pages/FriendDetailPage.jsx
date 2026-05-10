@@ -1,16 +1,14 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  LockKeyhole,
   MoreVertical,
   Plus,
   Search,
   SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import AddTransactionModal from '../components/modals/AddTransactionModal';
-import DeleteTransactionModal from '../components/modals/DeleteTransactionModal';
-import FriendOptionsModal from '../components/modals/FriendOptionsModal';
 import BalanceText from '../components/shared/BalanceText';
 import EmptyState from '../components/shared/EmptyState';
 import MobileSheet from '../components/shared/MobileSheet';
@@ -28,6 +26,16 @@ import {
   hasActiveFilters,
   sortTransactionsNewestFirst,
 } from '../lib/utils';
+
+const AddTransactionModal = lazy(
+  () => import('../components/modals/AddTransactionModal'),
+);
+const DeleteTransactionModal = lazy(
+  () => import('../components/modals/DeleteTransactionModal'),
+);
+const FriendOptionsModal = lazy(
+  () => import('../components/modals/FriendOptionsModal'),
+);
 
 const FRIEND_FILTER_DEFAULTS = {
   type: 'all',
@@ -188,8 +196,15 @@ function FriendFiltersForm({
   );
 }
 
-function MobileTransactionCard({ transaction, balance, onDelete }) {
+function MobileTransactionCard({ transaction, balance, onDelete, onOpenGroup }) {
   const isGiven = transaction.type === 'given';
+  const isGroupSynced = Boolean(transaction.isGroupSynced);
+  const isSettled = isGroupSynced && transaction.settled;
+  const amountClassName = isSettled
+    ? 'mt-1 font-semibold text-slate-400'
+    : isGiven
+      ? 'mt-1 font-semibold text-danger'
+      : 'mt-1 font-semibold text-success';
 
   return (
     <motion.div
@@ -198,32 +213,58 @@ function MobileTransactionCard({ transaction, balance, onDelete }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
       transition={{ duration: 0.18, ease: 'easeOut' }}
-      className="surface-panel border border-white/5 p-4"
+      onClick={isGroupSynced ? onOpenGroup : undefined}
+      role={isGroupSynced ? 'button' : undefined}
+      tabIndex={isGroupSynced ? 0 : undefined}
+      onKeyDown={(event) => {
+        if (!isGroupSynced || !['Enter', ' '].includes(event.key)) {
+          return;
+        }
+
+        event.preventDefault();
+        onOpenGroup();
+      }}
+      className={cn(
+        'surface-panel border border-white/5 p-4',
+        isGroupSynced && 'cursor-pointer transition hover:border-electric-500/25',
+      )}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-slate-100">
-            {transaction.purpose}
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-slate-100">
+              {transaction.purpose}
+            </p>
+            {isGroupSynced ? (
+              <>
+                <span className="nav-pill px-2.5 py-1 text-xs">
+                  {transaction.groupName || 'Group'}
+                </span>
+                <LockKeyhole className="h-3.5 w-3.5 text-slate-500" />
+              </>
+            ) : null}
+          </div>
           <p className="mt-1 text-sm text-slate-500">
             {formatDisplayDate(transaction.date)}
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={onDelete}
-          className="rounded-full border border-white/10 bg-white/5 p-2 text-slate-400 transition hover:border-danger/25 hover:text-danger"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+        {!isGroupSynced ? (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="rounded-full border border-white/10 bg-white/5 p-2 text-slate-400 transition hover:border-danger/25 hover:text-danger"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        ) : null}
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div className="rounded-2xl bg-white/5 p-3">
           <p className="text-slate-400">Amount</p>
-          <p className={isGiven ? 'mt-1 font-semibold text-danger' : 'mt-1 font-semibold text-success'}>
-            {isGiven ? '+' : '-'}
+          <p className={amountClassName}>
+            {isSettled ? '' : isGiven ? '+' : '-'}
             {formatCurrency(transaction.amount)}
           </p>
         </div>
@@ -422,6 +463,9 @@ export default function FriendDetailPage() {
                         transaction={transaction}
                         balance={runningBalances.get(transaction.id) || 0}
                         onDelete={() => setTransactionToDelete(transaction)}
+                        onOpenGroup={() =>
+                          navigate(`/groups?groupId=${transaction.groupId}`)
+                        }
                       />
                     ))}
                   </AnimatePresence>
@@ -443,8 +487,13 @@ export default function FriendDetailPage() {
                         <AnimatePresence initial={false}>
                           {filteredTransactions.map((transaction) => {
                             const isGiven = transaction.type === 'given';
+                            const isGroupSynced = Boolean(transaction.isGroupSynced);
+                            const isSettled =
+                              isGroupSynced && transaction.settled;
                             const transactionBalance =
                               runningBalances.get(transaction.id) || 0;
+                            const openGroup = () =>
+                              navigate(`/groups?groupId=${transaction.groupId}`);
 
                             return (
                               <motion.tr
@@ -454,20 +503,39 @@ export default function FriendDetailPage() {
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: -8 }}
                                 transition={{ duration: 0.18, ease: 'easeOut' }}
-                                className="text-sm text-slate-300"
+                                onClick={isGroupSynced ? openGroup : undefined}
+                                className={cn(
+                                  'text-sm text-slate-300',
+                                  isGroupSynced &&
+                                    'cursor-pointer transition hover:bg-electric-500/5',
+                                )}
                               >
                                 <td className="px-6 py-4 text-slate-400">
                                   {formatDisplayDate(transaction.date)}
                                 </td>
-                                <td className="px-6 py-4">{transaction.purpose}</td>
+                                <td className="px-6 py-4">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span>{transaction.purpose}</span>
+                                    {isGroupSynced ? (
+                                      <>
+                                        <span className="nav-pill px-2.5 py-1 text-xs">
+                                          {transaction.groupName || 'Group'}
+                                        </span>
+                                        <LockKeyhole className="h-3.5 w-3.5 text-slate-500" />
+                                      </>
+                                    ) : null}
+                                  </div>
+                                </td>
                                 <td
                                   className={
-                                    isGiven
+                                    isSettled
+                                      ? 'px-6 py-4 font-semibold text-slate-400'
+                                      : isGiven
                                       ? 'px-6 py-4 font-semibold text-danger'
                                       : 'px-6 py-4 font-semibold text-success'
                                   }
                                 >
-                                  {isGiven ? '+' : '-'}
+                                  {isSettled ? '' : isGiven ? '+' : '-'}
                                   {formatCurrency(transaction.amount)}
                                 </td>
                                 <td
@@ -487,13 +555,17 @@ export default function FriendDetailPage() {
                                   {formatCurrency(Math.abs(transactionBalance))}
                                 </td>
                                 <td className="px-6 py-4 text-right">
-                                  <button
-                                    type="button"
-                                    onClick={() => setTransactionToDelete(transaction)}
-                                    className="rounded-full border border-white/10 bg-white/5 p-2 text-slate-400 transition hover:border-danger/25 hover:text-danger"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
+                                  {!isGroupSynced ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setTransactionToDelete(transaction)
+                                      }
+                                      className="rounded-full border border-white/10 bg-white/5 p-2 text-slate-400 transition hover:border-danger/25 hover:text-danger"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  ) : null}
                                 </td>
                               </motion.tr>
                             );
@@ -536,41 +608,53 @@ export default function FriendDetailPage() {
         )}
       </div>
 
-      <AddTransactionModal
-        open={isTransactionModalOpen}
-        onClose={() => setIsTransactionModalOpen(false)}
-        friend={friend}
-        onSave={addTransaction}
-      />
+      {isTransactionModalOpen ? (
+        <Suspense fallback={null}>
+          <AddTransactionModal
+            open={isTransactionModalOpen}
+            onClose={() => setIsTransactionModalOpen(false)}
+            friend={friend}
+            onSave={addTransaction}
+          />
+        </Suspense>
+      ) : null}
 
-      <DeleteTransactionModal
-        open={Boolean(transactionToDelete)}
-        onClose={() => setTransactionToDelete(null)}
-        transaction={transactionToDelete}
-        onDelete={deleteTransaction}
-      />
+      {transactionToDelete ? (
+        <Suspense fallback={null}>
+          <DeleteTransactionModal
+            open={Boolean(transactionToDelete)}
+            onClose={() => setTransactionToDelete(null)}
+            transaction={transactionToDelete}
+            onDelete={deleteTransaction}
+          />
+        </Suspense>
+      ) : null}
 
-      <FriendOptionsModal
-        open={isOptionsModalOpen}
-        onClose={() => setIsOptionsModalOpen(false)}
-        friend={friend}
-        canDelete={!isDeleteBlocked}
-        deleteHint={
-          isDeleteBlocked
-            ? 'This friend is still linked to a group. Remove them from the group first.'
-            : undefined
-        }
-        onSaveName={(nextName) => updateFriend(friend.id, nextName)}
-        onDelete={() => {
-          const result = deleteFriend(friend.id);
+      {isOptionsModalOpen ? (
+        <Suspense fallback={null}>
+          <FriendOptionsModal
+            open={isOptionsModalOpen}
+            onClose={() => setIsOptionsModalOpen(false)}
+            friend={friend}
+            canDelete={!isDeleteBlocked}
+            deleteHint={
+              isDeleteBlocked
+                ? 'This friend is still linked to a group. Remove them from the group first.'
+                : undefined
+            }
+            onSaveName={(nextName) => updateFriend(friend.id, nextName)}
+            onDelete={() => {
+              const result = deleteFriend(friend.id);
 
-          if (result.success) {
-            navigate('/dashboard');
-          }
+              if (result.success) {
+                navigate('/dashboard');
+              }
 
-          return result;
-        }}
-      />
+              return result;
+            }}
+          />
+        </Suspense>
+      ) : null}
 
       <MobileSheet
         open={isFilterSheetOpen}

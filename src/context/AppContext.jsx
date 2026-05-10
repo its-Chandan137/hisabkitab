@@ -1,11 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import {
-  AUTH_PASSWORD,
-  AUTH_USERNAME,
-  SESSION_KEY,
-} from '../lib/constants';
+import { ADMIN_EMAIL } from '../lib/constants';
+import { fetchProfile } from '../lib/auth';
+import { supabase } from '../lib/supabase';
 import {
   decryptAppData,
+  configureStorageScope,
   getEncryptedAppData,
   getPendingSyncFlag,
   loadAppData,
@@ -13,7 +12,7 @@ import {
   restoreAppDataFromEncrypted,
   setPendingSyncFlag,
 } from '../lib/storage';
-import { loadFromCloud, saveToCloud } from '../lib/sync';
+import { createFriendFromName, syncGroupLedgers } from '../lib/groupLedgerSync';
 import {
   createId,
   normalizeName,
@@ -44,9 +43,10 @@ function downloadBackupFile(content) {
 
 export function AppProvider({ children }) {
   const [data, setData] = useState(() => loadAppData());
-  const [isAuthenticated, setIsAuthenticated] = useState(() =>
-    Boolean(sessionStorage.getItem(SESSION_KEY)),
-  );
+  const [currentUser, setCurrentUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [syncStatus, setSyncStatus] = useState(() =>
     getPendingSyncFlag() ? 'error' : 'idle',
   );
@@ -54,10 +54,15 @@ export function AppProvider({ children }) {
   const dataRef = useRef(data);
   const retryTimeoutRef = useRef(null);
   const hasBootstrappedSyncRef = useRef(false);
+  const currentUserRef = useRef(null);
 
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
+
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
 
   useEffect(
     () => () => {
@@ -67,6 +72,86 @@ export function AppProvider({ children }) {
     },
     [],
   );
+
+  useEffect(() => {
+    if (!supabase) {
+      setIsAuthLoading(false);
+      return undefined;
+    }
+
+    let isMounted = true;
+
+    const applySession = async (session) => {
+      const user = session?.user || null;
+
+      if (!user) {
+        if (!isMounted) {
+          return;
+        }
+        currentUserRef.current = null;
+        configureStorageScope(null);
+        setCurrentUser(null);
+        setProfile(null);
+        setIsAuthenticated(false);
+        setIsAuthLoading(false);
+        setSyncStatus(getPendingSyncFlag() ? 'error' : 'idle');
+        return;
+      }
+
+      try {
+        const nextProfile = await fetchProfile(user.id);
+        const isApproved = nextProfile?.status === 'approved';
+
+        if (!isMounted) {
+          return;
+        }
+
+        currentUserRef.current = isApproved ? user : null;
+        configureStorageScope(user.id, {
+          useLegacyFallback:
+            isApproved && user.email?.toLowerCase() === ADMIN_EMAIL,
+        });
+        if (isApproved) {
+          const scopedData = loadAppData();
+          dataRef.current = scopedData;
+          setData(scopedData);
+        }
+        setCurrentUser(isApproved ? user : null);
+        setProfile(nextProfile);
+        setIsAuthenticated(isApproved);
+        setIsAuthLoading(false);
+
+        if (!isApproved) {
+          await supabase.auth.signOut();
+        }
+      } catch (error) {
+        console.warn('Unable to load auth profile.', error);
+        if (isMounted) {
+          currentUserRef.current = null;
+          configureStorageScope(null);
+          setCurrentUser(null);
+          setProfile(null);
+          setIsAuthenticated(false);
+          setIsAuthLoading(false);
+        }
+      }
+    };
+
+    supabase.auth.getSession().then(({ data: sessionData }) => {
+      void applySession(sessionData.session);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        void applySession(session);
+      },
+    );
+
+    return () => {
+      isMounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
 
   const scheduleRetry = (callback) => {
     if (retryTimeoutRef.current) {
@@ -80,7 +165,9 @@ export function AppProvider({ children }) {
     snapshot,
     { allowRetry = true } = {},
   ) => {
-    if (!AUTH_USERNAME) {
+    const userId = currentUserRef.current?.id;
+
+    if (!userId) {
       return { success: false, skipped: true };
     }
 
@@ -93,8 +180,10 @@ export function AppProvider({ children }) {
     setSyncStatus('syncing');
 
     try {
+      const { saveToCloud } = await import('../lib/sync');
+
       await saveToCloud(
-        AUTH_USERNAME,
+        userId,
         snapshot.encryptedData,
         snapshot.data.updatedAt,
       );
@@ -140,8 +229,9 @@ export function AppProvider({ children }) {
     }
 
     const localSnapshot = getLocalSnapshot();
+    const userId = currentUserRef.current?.id;
 
-    if (!AUTH_USERNAME) {
+    if (!userId) {
       setSyncStatus('idle');
       return { success: false, skipped: true, data: localSnapshot.data };
     }
@@ -154,7 +244,8 @@ export function AppProvider({ children }) {
     setSyncStatus('syncing');
 
     try {
-      const cloudRow = await loadFromCloud(AUTH_USERNAME);
+      const { loadFromCloud } = await import('../lib/sync');
+      const cloudRow = await loadFromCloud(userId);
 
       if (!cloudRow?.data) {
         await saveSnapshotToCloud(localSnapshot);
@@ -224,7 +315,8 @@ export function AppProvider({ children }) {
     const baseData = dataRef.current;
     const nextData =
       typeof updater === 'function' ? updater(baseData) : updater;
-    const snapshot = persistAppData(nextData, {
+    const syncedData = syncGroupLedgers(nextData);
+    const snapshot = persistAppData(syncedData, {
       updatedAt: new Date().toISOString(),
     });
 
@@ -245,34 +337,86 @@ export function AppProvider({ children }) {
   };
 
   const login = async (username, password) => {
-    if (!AUTH_USERNAME || !AUTH_PASSWORD) {
+    if (!supabase) {
       return {
         success: false,
-        message: 'Add login credentials to your .env file before signing in.',
+        message: 'Supabase is not configured.',
       };
     }
 
-    if (username.trim() !== AUTH_USERNAME || password !== AUTH_PASSWORD) {
+    const { data: authData, error: authError } =
+      await supabase.auth.signInWithPassword({
+        email: username.trim(),
+        password,
+      });
+
+    if (authError || !authData.user) {
       return {
         success: false,
         message: 'That username or password does not match.',
       };
     }
 
+    const nextProfile = await fetchProfile(authData.user.id);
+
+    // APPROVAL_GATE - remove this check to open public signup.
+    if (nextProfile?.status !== 'approved') {
+      await supabase.auth.signOut();
+      currentUserRef.current = null;
+      setCurrentUser(null);
+      setProfile(nextProfile);
+      setIsAuthenticated(false);
+
+      if (nextProfile?.status === 'pending') {
+        return {
+          success: false,
+          message: 'Your request is still pending approval.',
+        };
+      }
+
+      if (nextProfile?.status === 'rejected') {
+        return {
+          success: false,
+          message: 'Your access request was rejected.',
+        };
+      }
+
+      return {
+        success: false,
+        message: 'Your access request could not be found.',
+      };
+    }
+
+    currentUserRef.current = authData.user;
+    configureStorageScope(authData.user.id, {
+      useLegacyFallback:
+        authData.user.email?.toLowerCase() === ADMIN_EMAIL,
+    });
+    const scopedData = loadAppData();
+    dataRef.current = scopedData;
+    setData(scopedData);
+    setCurrentUser(authData.user);
+    setProfile(nextProfile);
     await initializeSync({ markBootstrapped: true });
-    sessionStorage.setItem(SESSION_KEY, AUTH_USERNAME);
     setIsAuthenticated(true);
 
     return { success: true };
   };
 
-  const logout = () => {
-    sessionStorage.removeItem(SESSION_KEY);
+  const logout = async () => {
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+
     if (retryTimeoutRef.current) {
       window.clearTimeout(retryTimeoutRef.current);
       retryTimeoutRef.current = null;
     }
     hasBootstrappedSyncRef.current = false;
+    currentUserRef.current = null;
+    configureStorageScope(null);
+    setCurrentUser(null);
+    setProfile(null);
     setIsAuthenticated(false);
     setSyncStatus(getPendingSyncFlag() ? 'error' : 'idle');
   };
@@ -296,7 +440,7 @@ export function AppProvider({ children }) {
     downloadBackupFile(
       JSON.stringify(
         {
-          username: AUTH_USERNAME || 'local-user',
+          username: profile?.username || currentUser?.email || 'local-user',
           exportedAt: new Date().toISOString(),
           encryptedData,
         },
@@ -426,6 +570,17 @@ export function AppProvider({ children }) {
   };
 
   const deleteTransaction = (transactionId) => {
+    const transaction = dataRef.current.transactions.find(
+      (entry) => entry.id === transactionId,
+    );
+
+    if (transaction?.isGroupSynced) {
+      return {
+        success: false,
+        message: 'Group-linked entries can only be changed from the group.',
+      };
+    }
+
     commit(
       (currentData) => ({
         ...currentData,
@@ -439,6 +594,8 @@ export function AppProvider({ children }) {
         tone: 'danger',
       },
     );
+
+    return { success: true };
   };
 
   const updateFriend = (friendId, nextName) => {
@@ -518,10 +675,12 @@ export function AppProvider({ children }) {
     }
 
     let savedGroup = null;
+    let newlyAddedFriends = [];
 
     commit(
       (currentData) => {
         const nextFriends = [...currentData.friends];
+        const addedFriends = [];
         const resolvedMembers = [];
 
         members.forEach((member) => {
@@ -549,11 +708,13 @@ export function AppProvider({ children }) {
           const friendId = existingFriend?.id || createId('friend');
 
           if (!existingFriend) {
-            nextFriends.push({
+            const friend = {
+              ...createFriendFromName(customName),
               id: friendId,
-              name: customName,
-              createdAt: new Date().toISOString(),
-            });
+            };
+
+            nextFriends.push(friend);
+            addedFriends.push(friend);
           }
 
           if (
@@ -580,6 +741,7 @@ export function AppProvider({ children }) {
             };
 
         savedGroup = nextGroup;
+        newlyAddedFriends = addedFriends;
 
         return {
           ...currentData,
@@ -597,6 +759,14 @@ export function AppProvider({ children }) {
         tone: 'success',
       },
     );
+
+    newlyAddedFriends.forEach((friend) => {
+      addToast({
+        title: 'Friend added',
+        message: `${friend.name} was added to your friends list`,
+        tone: 'success',
+      });
+    });
 
     return { success: true, group: savedGroup };
   };
@@ -669,6 +839,86 @@ export function AppProvider({ children }) {
     return { success: true, expense };
   };
 
+  const updateGroupExpense = ({
+    expenseId,
+    item,
+    totalAmount,
+    paidBy,
+    date,
+  }) => {
+    const existingExpense = dataRef.current.groupExpenses.find(
+      (expense) => expense.id === expenseId,
+    );
+    const group = dataRef.current.groups.find(
+      (entry) => entry.id === existingExpense?.groupId,
+    );
+    const cleanedItem = normalizeName(item);
+    const numericTotal = roundCurrency(totalAmount);
+
+    if (!existingExpense || !group || !cleanedItem || !numericTotal || !paidBy) {
+      return {
+        success: false,
+        message: 'Item, total, payer, and group are required.',
+      };
+    }
+
+    const splitAmount = roundCurrency(numericTotal / (group.members.length + 1));
+    const updatedExpense = {
+      ...existingExpense,
+      item: cleanedItem,
+      totalAmount: numericTotal,
+      paidBy,
+      splitAmount,
+      date: toIsoDate(date),
+      updatedAt: new Date().toISOString(),
+    };
+
+    commit(
+      (currentData) => ({
+        ...currentData,
+        groupExpenses: currentData.groupExpenses.map((expense) =>
+          expense.id === expenseId ? updatedExpense : expense,
+        ),
+      }),
+      {
+        title: 'Expense updated',
+        message: `${group.name} group balances were updated.`,
+        tone: 'success',
+      },
+    );
+
+    return { success: true, expense: updatedExpense };
+  };
+
+  const deleteGroupExpense = (expenseId) => {
+    const existingExpense = dataRef.current.groupExpenses.find(
+      (expense) => expense.id === expenseId,
+    );
+    const group = dataRef.current.groups.find(
+      (entry) => entry.id === existingExpense?.groupId,
+    );
+
+    if (!existingExpense || !group) {
+      return { success: false, message: 'Expense not found.' };
+    }
+
+    commit(
+      (currentData) => ({
+        ...currentData,
+        groupExpenses: currentData.groupExpenses.filter(
+          (expense) => expense.id !== expenseId,
+        ),
+      }),
+      {
+        title: 'Expense deleted',
+        message: `${group.name} group balances were updated.`,
+        tone: 'danger',
+      },
+    );
+
+    return { success: true };
+  };
+
   const addGroupPayment = ({ groupId, friendId, amount, date, balanceBefore }) => {
     const group = dataRef.current.groups.find((entry) => entry.id === groupId);
     const numericAmount = roundCurrency(amount);
@@ -720,7 +970,11 @@ export function AppProvider({ children }) {
     <AppContext.Provider
       value={{
         ...data,
+        currentUser,
+        profile,
         isAuthenticated,
+        isAuthLoading,
+        isAdmin: currentUser?.email?.toLowerCase() === ADMIN_EMAIL,
         syncStatus,
         login,
         logout,
@@ -735,6 +989,8 @@ export function AppProvider({ children }) {
         saveGroup,
         deleteGroup,
         addGroupExpense,
+        updateGroupExpense,
+        deleteGroupExpense,
         addGroupPayment,
       }}
     >

@@ -5,7 +5,23 @@ import {
   PENDING_SYNC_KEY,
   STORAGE_KEY,
 } from './constants';
+import { syncGroupLedgers } from './groupLedgerSync';
 import { createSeedData } from './seedData';
+
+let activeStorageKey = STORAGE_KEY;
+
+export function configureStorageScope(userId, { useLegacyFallback = false } = {}) {
+  activeStorageKey = userId ? `${STORAGE_KEY}_${userId}` : STORAGE_KEY;
+
+  if (
+    userId &&
+    useLegacyFallback &&
+    !localStorage.getItem(activeStorageKey) &&
+    localStorage.getItem(STORAGE_KEY)
+  ) {
+    localStorage.setItem(activeStorageKey, localStorage.getItem(STORAGE_KEY));
+  }
+}
 
 function deriveUpdatedAt(data) {
   const timestamps = [
@@ -54,7 +70,7 @@ export function normalizeAppData(data, fallbackUpdatedAt) {
     groupPayments: Array.isArray(data?.groupPayments) ? data.groupPayments : [],
   };
 
-  return normalizedData;
+  return syncGroupLedgers(normalizedData);
 }
 
 export function encryptAppData(data, options = {}) {
@@ -91,11 +107,11 @@ export function decryptAppData(encryptedData, fallbackUpdatedAt) {
 }
 
 export function getEncryptedAppData() {
-  return localStorage.getItem(STORAGE_KEY);
+  return localStorage.getItem(activeStorageKey);
 }
 
 export function setEncryptedAppData(encryptedData) {
-  localStorage.setItem(STORAGE_KEY, encryptedData);
+  localStorage.setItem(activeStorageKey, encryptedData);
 }
 
 export function setPendingSyncFlag(value) {
@@ -129,8 +145,8 @@ export function loadAppData() {
 
   if (!savedPayload) {
     const seedData = createSeedData();
-    persistAppData(seedData, { updatedAt: seedData.updatedAt });
-    return seedData;
+    const seedPayload = persistAppData(seedData, { updatedAt: seedData.updatedAt });
+    return seedPayload.data;
   }
 
   try {
@@ -147,7 +163,7 @@ export function loadAppData() {
   } catch (error) {
     console.warn('Resetting app data because decryption failed.', error);
     const seedData = createSeedData();
-    persistAppData(seedData, { updatedAt: seedData.updatedAt });
-    return seedData;
+    const seedPayload = persistAppData(seedData, { updatedAt: seedData.updatedAt });
+    return seedPayload.data;
   }
 }

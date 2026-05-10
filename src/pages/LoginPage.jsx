@@ -1,29 +1,52 @@
 import { motion } from 'framer-motion';
-import { Eye, EyeOff, LoaderCircle, LockKeyhole, UserRound } from 'lucide-react';
+import { Eye, EyeOff, LoaderCircle, LockKeyhole, Mail, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageShell from '../components/shared/PageShell';
 import { APP_NAME } from '../lib/constants';
 import { useAppContext } from '../context/AppContext';
+import { requestAccess } from '../lib/auth';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { login } = useAppContext();
+  const [mode, setMode] = useState('login');
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [isSyncingLogin, setIsSyncingLogin] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
+    setSuccessMessage('');
     setIsSyncingLogin(true);
-    const result = await login(username, password);
+
+    const result =
+      mode === 'login'
+        ? await login(email, password)
+        : await requestAccess({
+            username: username.trim(),
+            email: email.trim(),
+            password,
+          });
 
     if (result.success) {
-      navigate('/dashboard', { replace: true });
+      if (mode === 'login') {
+        navigate('/dashboard', { replace: true });
+        return;
+      }
+
+      setIsSyncingLogin(false);
+      setSuccessMessage(
+        result.status === 'approved'
+          ? 'Your access has already been approved.'
+          : "Access requested. You'll receive an email once approved.",
+      );
       return;
     }
 
@@ -52,23 +75,44 @@ export default function LoginPage() {
             {APP_NAME}
           </h1>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            Sign in with your credentials to open your personal udhar
-            dashboard.
+            {mode === 'login'
+              ? 'Sign in with your email and password to open your personal udhar dashboard.'
+              : 'Request access to your personal udhar dashboard.'}
           </p>
 
           <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+            {mode === 'request' ? (
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-300">
+                  Username
+                </span>
+                <div className="relative">
+                  <UserRound className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                    className="input-field pl-11"
+                    placeholder="Enter your username"
+                    required
+                  />
+                </div>
+              </label>
+            ) : null}
+
             <label className="block">
               <span className="mb-2 block text-sm font-medium text-slate-300">
-                Username or email
+                Email
               </span>
               <div className="relative">
-                <UserRound className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <Mail className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                 <input
-                  type="text"
-                  value={username}
-                  onChange={(event) => setUsername(event.target.value)}
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
                   className="input-field pl-11"
-                  placeholder="Enter your username"
+                  placeholder="Enter your email"
+                  required
                 />
               </div>
             </label>
@@ -85,6 +129,7 @@ export default function LoginPage() {
                   onChange={(event) => setPassword(event.target.value)}
                   className="input-field pl-11 pr-12"
                   placeholder="Enter your password"
+                  required
                 />
                 <button
                   type="button"
@@ -103,18 +148,43 @@ export default function LoginPage() {
             {isSyncingLogin ? (
               <div className="flex items-center gap-2 rounded-2xl border border-electric-500/20 bg-electric-500/10 px-4 py-3 text-sm text-electric-200">
                 <LoaderCircle className="h-4 w-4 animate-spin" />
-                Syncing your data...
+                {mode === 'login' ? 'Syncing your data...' : 'Submitting request...'}
               </div>
             ) : null}
 
             {error ? <p className="text-sm text-danger">{error}</p> : null}
+            {successMessage ? (
+              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+                {successMessage}
+              </div>
+            ) : null}
 
             <button
               type="submit"
               disabled={isSyncingLogin}
               className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {isSyncingLogin ? 'Syncing...' : 'Login'}
+              {isSyncingLogin
+                ? mode === 'login'
+                  ? 'Syncing...'
+                  : 'Requesting...'
+                : mode === 'login'
+                  ? 'Login'
+                  : 'Request Access'}
+            </button>
+
+            <button
+              type="button"
+              className="btn-ghost w-full"
+              onClick={() => {
+                setMode((currentMode) =>
+                  currentMode === 'login' ? 'request' : 'login',
+                );
+                setError('');
+                setSuccessMessage('');
+              }}
+            >
+              {mode === 'login' ? 'Request access' : 'Back to Login'}
             </button>
           </form>
         </motion.div>
