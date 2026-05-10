@@ -9,11 +9,14 @@ export async function saveToCloud(
     throw new Error('Supabase is not configured.');
   }
 
+  if (!userId) {
+    throw new Error('User id is required to save data.');
+  }
+
   const { data, error } = await supabase
     .from('user_data')
     .upsert(
       {
-        username: userId,
         user_id: userId,
         data: encryptedData,
         updated_at: updatedAt,
@@ -35,6 +38,10 @@ export async function saveToCloud(
 export async function loadFromCloud(userId) {
   if (!supabase) {
     throw new Error('Supabase is not configured.');
+  }
+
+  if (!userId) {
+    throw new Error('User id is required to load data.');
   }
 
   const { data, error } = await supabase

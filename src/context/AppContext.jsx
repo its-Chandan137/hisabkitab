@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import {
   decryptAppData,
   configureStorageScope,
+  createEmptyAppData,
   getEncryptedAppData,
   getPendingSyncFlag,
   loadAppData,
@@ -211,8 +212,9 @@ export function AppProvider({ children }) {
 
   const getLocalSnapshot = () => {
     const localData = loadAppData();
+    const existingEncryptedData = getEncryptedAppData();
     const encryptedData =
-      getEncryptedAppData() ||
+      existingEncryptedData ||
       persistAppData(localData, {
         updatedAt: localData.updatedAt,
       }).encryptedData;
@@ -220,6 +222,7 @@ export function AppProvider({ children }) {
     return {
       data: localData,
       encryptedData,
+      hasEncryptedData: Boolean(existingEncryptedData),
     };
   };
 
@@ -228,13 +231,15 @@ export function AppProvider({ children }) {
       hasBootstrappedSyncRef.current = true;
     }
 
-    const localSnapshot = getLocalSnapshot();
     const userId = currentUserRef.current?.id;
 
     if (!userId) {
+      const localSnapshot = getLocalSnapshot();
       setSyncStatus('idle');
       return { success: false, skipped: true, data: localSnapshot.data };
     }
+
+    const localSnapshot = getLocalSnapshot();
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       setSyncStatus(getPendingSyncFlag() ? 'error' : 'idle');
@@ -248,11 +253,31 @@ export function AppProvider({ children }) {
       const cloudRow = await loadFromCloud(userId);
 
       if (!cloudRow?.data) {
-        await saveSnapshotToCloud(localSnapshot);
-        return { success: true, data: localSnapshot.data };
+        const emptyData = createEmptyAppData();
+        const emptySnapshot = persistAppData(emptyData, {
+          updatedAt: emptyData.updatedAt,
+        });
+
+        dataRef.current = emptySnapshot.data;
+        setData(emptySnapshot.data);
+        setPendingSyncFlag(false);
+        setSyncStatus('idle');
+        return { success: true, data: emptySnapshot.data };
       }
 
       const cloudPayload = decryptAppData(cloudRow.data, cloudRow.updated_at);
+
+      if (!localSnapshot.hasEncryptedData) {
+        const restoredCloudPayload = persistAppData(cloudPayload.data, {
+          updatedAt: cloudRow.updated_at || cloudPayload.data.updatedAt,
+        });
+        dataRef.current = restoredCloudPayload.data;
+        setData(restoredCloudPayload.data);
+        setPendingSyncFlag(false);
+        setSyncStatus('synced');
+        return { success: true, data: restoredCloudPayload.data };
+      }
+
       const localUpdatedAt = new Date(
         localSnapshot.data.updatedAt || 0,
       ).getTime();

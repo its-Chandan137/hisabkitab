@@ -6,12 +6,21 @@ import {
   STORAGE_KEY,
 } from './constants';
 import { syncGroupLedgers } from './groupLedgerSync';
-import { createSeedData } from './seedData';
 
 let activeStorageKey = STORAGE_KEY;
 
 export function configureStorageScope(userId, { useLegacyFallback = false } = {}) {
-  activeStorageKey = userId ? `${STORAGE_KEY}_${userId}` : STORAGE_KEY;
+  const previousScopedKey = userId ? `${STORAGE_KEY}_${userId}` : STORAGE_KEY;
+  activeStorageKey = userId ? `hisabkitab_${userId}_data` : STORAGE_KEY;
+
+  if (
+    userId &&
+    useLegacyFallback &&
+    !localStorage.getItem(activeStorageKey) &&
+    localStorage.getItem(previousScopedKey)
+  ) {
+    localStorage.setItem(activeStorageKey, localStorage.getItem(previousScopedKey));
+  }
 
   if (
     userId &&
@@ -21,6 +30,18 @@ export function configureStorageScope(userId, { useLegacyFallback = false } = {}
   ) {
     localStorage.setItem(activeStorageKey, localStorage.getItem(STORAGE_KEY));
   }
+}
+
+export function createEmptyAppData(updatedAt = new Date().toISOString()) {
+  return {
+    version: DATA_VERSION,
+    updatedAt,
+    friends: [],
+    transactions: [],
+    groups: [],
+    groupExpenses: [],
+    groupPayments: [],
+  };
 }
 
 function deriveUpdatedAt(data) {
@@ -144,9 +165,7 @@ export function loadAppData() {
   const savedPayload = getEncryptedAppData();
 
   if (!savedPayload) {
-    const seedData = createSeedData();
-    const seedPayload = persistAppData(seedData, { updatedAt: seedData.updatedAt });
-    return seedPayload.data;
+    return createEmptyAppData();
   }
 
   try {
@@ -162,8 +181,6 @@ export function loadAppData() {
     return data;
   } catch (error) {
     console.warn('Resetting app data because decryption failed.', error);
-    const seedData = createSeedData();
-    const seedPayload = persistAppData(seedData, { updatedAt: seedData.updatedAt });
-    return seedPayload.data;
+    return createEmptyAppData();
   }
 }
