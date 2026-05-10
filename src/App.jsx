@@ -10,6 +10,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const FriendDetailPage = lazy(() => import('./pages/FriendDetailPage'));
 const GroupsPage = lazy(() => import('./pages/GroupsPage'));
+const AdminPage = lazy(() => import('./pages/AdminPage'));
 
 function AppLoadingFallback() {
   return (
@@ -47,6 +48,15 @@ export default function App() {
             <Route path="/friend/:id" element={<FriendDetailPage />} />
             <Route path="/groups" element={<GroupsPage />} />
           </Route>
+
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <AdminPage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="*"

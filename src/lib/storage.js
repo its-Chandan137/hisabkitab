@@ -8,6 +8,21 @@ import {
 import { syncGroupLedgers } from './groupLedgerSync';
 import { createSeedData } from './seedData';
 
+let activeStorageKey = STORAGE_KEY;
+
+export function configureStorageScope(userId, { useLegacyFallback = false } = {}) {
+  activeStorageKey = userId ? `${STORAGE_KEY}_${userId}` : STORAGE_KEY;
+
+  if (
+    userId &&
+    useLegacyFallback &&
+    !localStorage.getItem(activeStorageKey) &&
+    localStorage.getItem(STORAGE_KEY)
+  ) {
+    localStorage.setItem(activeStorageKey, localStorage.getItem(STORAGE_KEY));
+  }
+}
+
 function deriveUpdatedAt(data) {
   const timestamps = [
     data?.updatedAt,
@@ -92,11 +107,11 @@ export function decryptAppData(encryptedData, fallbackUpdatedAt) {
 }
 
 export function getEncryptedAppData() {
-  return localStorage.getItem(STORAGE_KEY);
+  return localStorage.getItem(activeStorageKey);
 }
 
 export function setEncryptedAppData(encryptedData) {
-  localStorage.setItem(STORAGE_KEY, encryptedData);
+  localStorage.setItem(activeStorageKey, encryptedData);
 }
 
 export function setPendingSyncFlag(value) {

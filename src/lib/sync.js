@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 
 export async function saveToCloud(
-  username,
+  userId,
   encryptedData,
   updatedAt = new Date().toISOString(),
 ) {
@@ -13,12 +13,13 @@ export async function saveToCloud(
     .from('user_data')
     .upsert(
       {
-        username,
+        username: userId,
+        user_id: userId,
         data: encryptedData,
         updated_at: updatedAt,
       },
       {
-        onConflict: 'username',
+        onConflict: 'user_id',
       },
     )
     .select('updated_at')
@@ -31,7 +32,7 @@ export async function saveToCloud(
   return data;
 }
 
-export async function loadFromCloud(username) {
+export async function loadFromCloud(userId) {
   if (!supabase) {
     throw new Error('Supabase is not configured.');
   }
@@ -39,7 +40,7 @@ export async function loadFromCloud(username) {
   const { data, error } = await supabase
     .from('user_data')
     .select('data, updated_at')
-    .eq('username', username)
+    .eq('user_id', userId)
     .maybeSingle();
 
   if (error) {
