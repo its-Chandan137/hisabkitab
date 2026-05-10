@@ -61,6 +61,18 @@ async function sendEmail(to, subject, html) {
 }
 
 export default async function handler(request, response) {
+
+  // CORS headers
+  response.setHeader('Access-Control-Allow-Origin', process.env.NODE_ENV === 'production' ? 'https://hisabkitabs.vercel.app' : 'http://localhost:5173');
+  response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-internal-key, Authorization');
+
+  // Handle preflight
+  if (request.method === 'OPTIONS') {
+    return response.status(204).end();
+  }
+
+  
   if (request.method !== 'POST') {
     return response.status(405).json({ error: 'Method not allowed.' });
   }

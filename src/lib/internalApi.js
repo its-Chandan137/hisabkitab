@@ -8,7 +8,9 @@ export async function callInternalApi(path, body, { accessToken } = {}) {
     headers.Authorization = `Bearer ${accessToken}`;
   }
 
-  const response = await fetch(path, {
+  const base = import.meta.env.VITE_API_BASE_URL || '';
+
+  const response = await fetch(`${base}${path}`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
